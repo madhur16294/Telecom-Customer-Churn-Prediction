@@ -1,0 +1,197 @@
+---
+title: "Telecom Churn Analysis"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(readxl)
+teldata <- read.csv("D:/Spring 2019/Multi Analysis/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+
+```
+
+
+```{r}
+summary(teldata)
+```
+
+
+```{r}
+#install.packages("h2o")
+library(h2o)
+library(data.table)
+library(purrr)
+library(ggplot2)
+#install.packages("hrbrthemes")
+library(hrbrthemes)
+
+library(tidyverse) 
+library(MASS)
+library(car)
+library(e1071)
+library(caret)
+#install.packages("cowplot")
+library(cowplot)
+library(caTools)
+library(pROC)
+#install.packages("ggcorrplot")
+library(ggcorrplot)
+
+```
+
+```{r}
+str(teldata)
+
+```
+
+
+```{r}
+head(teldata)
+```
+
+Checking for NA values
+
+```{r}
+colSums(is.na(teldata))
+```
+
+
+Displaying NA values
+
+```{r}
+telmissing<-teldata[is.na(teldata$TotalCharges),] 
+telmissing
+```
+
+The tenture for the missing values in the total charges are all 0. This means they are new customers. Hence these can be removed.
+
+
+```{r}
+teldata <- na.exclude(teldata)
+```
+
+
+Checking if the NA vals were removed
+
+```{r}
+colSums(is.na(teldata))
+```
+
+
+
+
+DATA VISUALIZATION
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+```
+
+
+
+```{r}
+b1 <- ggplot(teldata, aes(gender,fill=Churn)) + geom_bar(position='fill') 
+#+theme(legend.position="none")
+
+b2 <- ggplot(teldata, aes(SeniorCitizen, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b3 <- ggplot(teldata, aes(Partner, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b4 <- ggplot(teldata, aes(Dependents, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b5 <- ggplot(teldata, aes(PhoneService, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b6 <- ggplot(teldata, aes(MultipleLines, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b7 <- ggplot(teldata, aes(InternetService, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b8 <- ggplot(teldata, aes(OnlineSecurity, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b9 <- ggplot(teldata, aes(OnlineBackup, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b10 <- ggplot(teldata, aes(DeviceProtection, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+b11 <- ggplot(teldata, aes(TechSupport, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b12 <- ggplot(teldata, aes(StreamingTV, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b13 <- ggplot(teldata, aes(StreamingMovies, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b14 <- ggplot(teldata, aes(Contract, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b15 <- ggplot(teldata, aes(PaperlessBilling, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+b16 <- ggplot(teldata, aes(PaymentMethod, fill = Churn)) + geom_bar(position='fill')+theme(legend.position="none")
+
+
+grid.arrange(b1,b2,b3, ncol = 1)
+grid.arrange(b4,b5,b6, ncol = 1)
+grid.arrange(b7,b8,b9,b10, ncol = 2)
+grid.arrange(b11,b12,b13,b14,b15, ncol = 2)
+b16
+```
+
+
+
+```{r}
+boxplot(teldata$TotalCharges,data=teldata, main="Total Charges")
+boxplot(teldata$MonthlyCharges,data=teldata, main="Monthly Charges")
+boxplot(teldata$tenure,data=teldata, main="Tenure")
+
+```
+
+The we look at the 3 variables based on churn.
+
+```{r}
+b1 <- boxplot(tenure~Churn,data = teldata,col = c("skyblue","violet"), xlab ="Churn" , ylab = "tenure")
+b2 <- boxplot(MonthlyCharges~Churn,data = teldata,col = c("skyblue","violet"), xlab ="Churn" , ylab = "MonthlyCharges")
+b3 <- boxplot(TotalCharges~Churn,data = teldata,col = c("skyblue","violet"), xlab ="Churn" , ylab = "TotalCharges")
+#ggplot(teldata, aes(xlab = Churn, ylab = TotalCharges)) + geom_boxplot(fill = Churn)
+ #grid.arrange(b1,b2,b3,ncol = 2)
+```
+
+
+```{r}
+plot(teldata$TotalCharges, teldata$tenure)
+```
+
+
+
+
+```{r}
+library(corrplot)
+cor_data <-data.frame(teldata$tenure,teldata$MonthlyCharges,teldata$TotalCharges)
+corr <- cor(cor_data)
+corrplot(corr, method = "number")
+```
+
+
+```{r}
+hist(teldata$tenure, main="Tenure Distribution", 
+   xlab="Tenure (Months)")
+```
+
+
+
+
+```{r}
+
+
+hist(teldata$MonthlyCharges, main="Distribution of Monthly Charges", xlab="Monthly Charges")
+```
+
+
+```{r}
+
+hist(teldata$TotalCharges, main="Distribution of Monthly Charges", xlab="Monthly Charges")
+```
+
+
+
