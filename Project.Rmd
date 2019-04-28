@@ -1,0 +1,247 @@
+---
+title: "Untitled 9"
+author: "Gangadhar Epili"
+date: "April 22, 2019"
+output: word_document
+---
+
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r}
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(caret)
+library(rms)
+library(MASS)
+library(e1071)
+library(ROCR)
+library(gplots)
+library(pROC)
+library(rpart)
+library(randomForest)
+library(ggpubr)
+library(tidyverse)
+library(magrittr)
+library(data.table)
+library(reshape2)
+library(stats)
+```
+
+
+```{r}
+
+
+```
+
+```{r}
+telcoCust  <- read.csv("C:/Users/epili/Desktop/MVA/Telecom-Customer-Churn-prediction-master/Telco-Customer-Churn.csv")
+#View(telcoCus)
+str(telcoCust)
+
+# Change Senior Citizen into factor
+telcoCust$SeniorCitizen <- factor(telcoCust$SeniorCitizen)
+
+# Factor the response variable into 0, 1
+telcoCust$Churn <- factor(ifelse(telcoCust$Churn == 'No', 0, 1))
+
+# replace missing data with mean values
+telcoCust$TotalCharges <- ifelse(is.na(telcoCust$TotalCharges),ave(telcoCust$TotalCharges, FUN = function(x) mean(x, na.rm=TRUE)),telcoCust$TotalCharges)
+
+
+
+# Churn Rate
+telcoCust1 <- telcoCust %>% group_by(Churn) %>%
+                summarise(Count = length(Churn)) %>%
+                mutate(Rate = Count / sum(Count)*100.0)
+
+ggplot(telcoCust1, aes(x = '', y = Rate, fill = Churn)) +
+    geom_bar(width = 1, size = 1, color = 'blue', stat = 'identity') +
+    coord_polar('y') +
+    geom_text(aes(label = paste0(round(Rate), '%')),
+              position = position_stack(vjust = 0.5)) +
+    labs(title = 'Churners Rate') +
+    theme_classic() +
+    theme(axis.line = element_blank(),axis.title.x = element_blank(),axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text = element_blank())
+
+
+# EDA
+telcoCust$MonthlyChargesBin <- NA
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 0 & telcoCust$MonthlyCharges <= 20] <- '20'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 20 & telcoCust$MonthlyCharges <= 40] <- '40'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 40 & telcoCust$MonthlyCharges <= 60] <- '60'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 60 & telcoCust$MonthlyCharges <= 80] <- '80'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 80 & telcoCust$MonthlyCharges <= 100] <- '100'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 100 & telcoCust$MonthlyCharges <= 120] <- '120'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 120 & telcoCust$MonthlyCharges <= 140] <- '140'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 140 & telcoCust$MonthlyCharges <= 160] <- '160'
+telcoCust$MonthlyChargesBin[telcoCust$MonthlyCharges > 160 & telcoCust$MonthlyCharges <= 180] <- '180'
+telcoCust$MonthlyChargesBin <- factor(telcoCust$MonthlyChargesBin, 
+                                      levels = c('20', '40', '60', '80', '100', '120', '140', '160', '180'))
+
+
+# Remove PhoneService & InternetService
+telcoCust1 <- telcoCust[,-c(7,9)]
+
+# Remove Customer ID, Phone Service, Internet Service & monthly charges column
+telco <- telcoCust[, -c(1, 7, 9, 19)] 
+
+# Replace No Phone/Internet Service of all service columns
+telco$MultipleLines <- replace(telco$MultipleLines, telco$MultipleLines == 'No phone service', 'No')
+telco$OnlineSecurity <- replace(telco$OnlineSecurity, telco$OnlineSecurity == 'No internet service', 'No')
+telco$OnlineBackup <- replace(telco$OnlineBackup, telco$OnlineBackup == 'No internet service', 'No')
+telco$DeviceProtection <- replace(telco$DeviceProtection, telco$DeviceProtection == 'No internet service', 'No')
+telco$TechSupport <- replace(telco$TechSupport, telco$TechSupport == 'No internet service', 'No')
+telco$StreamingTV <- replace(telco$StreamingTV, telco$StreamingTV == 'No internet service', 'No')
+telco$StreamingMovies <- replace(telco$StreamingMovies, telco$StreamingMovies == 'No internet service', 'No')
+
+# Churn Rate of top-tier customers
+topTierCust <- telcoCust1[which(telcoCust1$MultipleLines == 'Yes' & telcoCust1$OnlineSecurity == 'Yes' & 
+                                telcoCust1$OnlineBackup == 'Yes' & telcoCust1$DeviceProtection == 'Yes' & 
+                                telcoCust1$TechSupport == 'Yes' & telcoCust1$StreamingTV == 'Yes' & 
+                                telcoCust1$StreamingMovies == 'Yes'), ]
+paste0('Top-tier customers: ', round((length(which(topTierCust$Churn == 1)) / nrow(topTierCust))*100, 2), '%')
+
+topTier = topTierCust[, c(2, 3, 4, 5, 6, 14, 15, 16, 20, 19)]
+names(topTier)
+
+library(caTools)
+set.seed(234)
+split = sample.split(topTier$Churn, SplitRatio = 0.7)
+trainingSet_topTier = subset(topTier, split == TRUE)
+testSet_topTier = subset(topTier, split == FALSE)
+
+#Random Forest  
+library(randomForest)
+set.seed(456)
+classifier.rf <- randomForest(as.factor(Churn) ~ gender + SeniorCitizen + Partner + Dependents + tenure + Contract + PaperlessBilling + PaymentMethod + MonthlyChargesBin, data = trainingSet_topTier,importance = TRUE,ntree = 50)
+
+summary(classifier.rf)
+varImpPlot(classifier.rf)
+
+y_Pred <- predict(classifier.rf, testSet_topTier)
+confusionMatrix(testSet_topTier$Churn, y_Pred)
+View(telcoCust)
+# Contract term
+paste0('The churn rate of month-to-month customers is ',
+       round(length(which(telcoCust$Contract == 'Month-to-month' & telcoCust$Churn == 1)) / 
+       length(telcoCust$Contract == 'Month-to-month')*100, 2), '%')
+
+paste0('The churn rate of one year customers is ',
+       round(length(which(telcoCust$Contract == 'One year' & telcoCust$Churn == 1)) / 
+       length(telcoCust$Contract == 'One year')*100, 2), '%')
+
+paste0('The churn rate of two year customers is ',
+       round(length(which(telcoCust$Contract == 'Two year' & telcoCust$Churn == 1)) / 
+       length(telcoCust$Contract == 'Two year')*100, 2), '%')
+
+  
+#SVM
+
+svm_fit <- svm(Churn ~ ., probability = TRUE, data = trainingSet_topTier )
+svm_fit
+svm_preds_train <- predict(svm_fit, trainingSet_topTier, probability = TRUE)
+svm_train_probs <- data.frame(attr(svm_preds_train, "probabilities"))
+plot(roc(trainingSet_topTier$Churn, svm_train_probs$X1))
+
+svmroc_train_simple <- roc(trainingSet_topTier$Churn, svm_train_probs$X1)
+svmauc_train_simple <- auc(svmroc_train_simple)
+svmauc_train_simple
+
+svm_preds_test <- predict(svm_fit, testSet_topTier, probability = TRUE)
+svm_test_probs <- data.frame(attr(svm_preds_test, "probabilities"))
+plot(roc(testSet_topTier$Churn, svm_test_probs$X1))
+
+svmroc_test <- roc(testSet_topTier$Churn, svm_test_probs$X1)
+svmauc_test <- auc(svmroc_test)
+svmauc_test
+
+#We observe that the model is a good fit because the AUC values for training and test are high and similar. We may consider improving the SVM model by performing a grid search for values of C, gamma and degree of the kernel that gives higher accuracy using k-fold cross-validation.
+#Logistic Regression
+
+# Remove Customer ID, Phone Service, Internet Service & monthly charges column
+telco <- telcoCust[, -c(1, 7, 9, 19)] 
+
+# Replace No Phone/Internet Service of all service columns
+telco$MultipleLines <- replace(telco$MultipleLines, telco$MultipleLines == 'No phone service', 'No')
+telco$OnlineSecurity <- replace(telco$OnlineSecurity, telco$OnlineSecurity == 'No internet service', 'No')
+telco$OnlineBackup <- replace(telco$OnlineBackup, telco$OnlineBackup == 'No internet service', 'No')
+telco$DeviceProtection <- replace(telco$DeviceProtection, telco$DeviceProtection == 'No internet service', 'No')
+telco$TechSupport <- replace(telco$TechSupport, telco$TechSupport == 'No internet service', 'No')
+telco$StreamingTV <- replace(telco$StreamingTV, telco$StreamingTV == 'No internet service', 'No')
+telco$StreamingMovies <- replace(telco$StreamingMovies, telco$StreamingMovies == 'No internet service', 'No')
+
+# Building the optimal model using backward elimination
+library(stats)
+
+# Fit classifier to the dataset
+classifier <- glm(formula = Churn ~ .,
+                  family = 'binomial',
+                  data = telco)
+
+# identify variables using backward elimination
+classifier <- step(classifier, direction = 'backward')
+summary(classifier)
+
+
+
+# Remove the variables from the dataset
+telco1 <- telco[, c(2, 4, 5, 7, 8, 10, 12, 13, 14, 15, 16, 17, 18)]
+
+# split the dataset into training set & test set
+library(caTools)
+set.seed(123)
+split = sample.split(telco1$Churn, SplitRatio = .7)
+trainingSet <- subset(telco1, split == TRUE)
+testSet <- subset(telco1, split == FALSE)
+
+# Feature Scaling
+trainingSet[c(3,11)] = scale(trainingSet[c(3,11)])
+testSet[c(3,11)] = scale(testSet[c(3,11)])
+
+
+
+# Fitting classifier to the Training set
+classifier <- glm(formula = Churn ~ .,
+                  family = 'binomial',
+                  data = trainingSet)
+summary(classifier)
+
+# Predicting the Test set results
+threshold = 0.5
+probPred = predict(classifier, type = 'response', newdata = testSet[-12])
+y_Pred <- ifelse(probPred > threshold, 1, 0)
+
+
+# Confusion Matrix - simplest but relies on 1 testSet, not relevant
+confusionMatrix(table(testSet$Churn, y_Pred))
+
+# K-folds cross validation
+library(caret)
+set.seed(456)
+folds <- createFolds(trainingSet$Churn, k=10)
+cv <- lapply(folds, function(x) {
+  training_fold <- trainingSet[-x, ]
+  test_fold <- trainingSet[x, ]
+  classifier <- glm(formula = Churn ~ .,
+                    family = 'binomial',
+                    data = training_fold)
+  threshold = 0.5
+  probPred = predict(classifier, type = 'response', newdata = test_fold[-12])
+  y_Pred <- ifelse(probPred > threshold, 1, 0)
+  cm = table(test_fold[, 12], y_Pred)
+  accuracy = (cm[1,1] + cm[2,2]) / (cm[1,1] + cm[2,2] + cm[1,2] + cm[2,1])
+  return(accuracy)
+})
+
+accuracy =  mean(as.numeric(cv))
+accuracy
+
+```
